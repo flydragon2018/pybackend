@@ -6,6 +6,10 @@ import yfinance as yf
 import openai
 from dotenv import load_dotenv
 import os
+import time
+
+import pandas as pd
+
 
 load_dotenv()
 
@@ -25,7 +29,7 @@ def calculate_indicators(data):
     sma_50 = sum(closes[-50:]) / 50 if len(closes) >= 50 else None
 
     # Calculate RSI (14-day)
-    rsi = None
+    rsi = 0
     if len(closes) >= 15:
         gains, losses = [], []
         for i in range(1, 15):
@@ -52,19 +56,28 @@ def calculate_indicators(data):
 @app.route('/analyze', methods=['GET'])
 def analyze_stock():
     symbol = request.args.get('symbol', '').upper()
+	#add period 
+    period = request.args.get('period', '').lower()
     if not symbol:
         return jsonify({"error": "Please provide a stock symbol"}), 400
-
+    if not period: 
+        return jsonify({"error": "Please provide a time period "}), 400
     try:
         # 1. Fetch data from Yahoo Finance
         ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="3mo")
+        if not ticker:
+            return jsonify({"error": f"No ticker found for symbol '{symbol}'"}), 404
+        #hist = ticker.history(period="3mo")
+        time.sleep(2)  #for free yahoo stock data delay
+        hist = ticker.history(period)
         
         if hist.empty:
             return jsonify({"error": f"No data found for symbol '{symbol}'"}), 404
-
+        if isinstance(hist.columns, pd.MultiIndex):
+            hist.columns = ['_'.join(col).strip() for col in hist.columns.values]
         # Convert the historical data to a list of dictionaries
         data = hist[['Open', 'High', 'Low', 'Close', 'Volume']].reset_index().to_dict(orient='records')
+		
         for point in data:
             point['Date'] = point['Date'].isoformat()
 
@@ -73,17 +86,18 @@ def analyze_stock():
 
         # 3. Get analysis from DeepSeek AI
         prompt = f"""
-        Analyze the stock {symbol}. 
+        Analyze the stock {symbol} for period {period}. 
         Current Price: ${indicators['current_price']:.2f}
-        20-Day SMA: ${indicators['sma_20']:.2f}
-        50-Day SMA: ${indicators['sma_50']:.2f}
-        14-Day RSI: {indicators['rsi']:.2f}
+        20-Day SMA: ${indicators['sma_20']:.2f} if ${indicators['sma_20']} else 'NA'
+        50-Day SMA: ${indicators['sma_50']:.2f} if ${indicators['sma_50']} else 'NA'
+        14-Day RSI: {indicators['rsi']:.2f} if ${indicators['rsi']} else 'NA'
 
-        Provide a very brief analysis and a recommendation (Buy/Sell/Hold).
+        Provide a very brief analysis and a recommendation (Strong Buy/Buy/Hold/Sell/Strong Sell).
         """
         
         response = openai.chat.completions.create(
-            model="deepseek-chat",
+            #model="deepseek-chat",
+            model="deepseek-v4-flash",			
             messages=[
                 {"role": "system", "content": "You are a helpful stock market analyst. Keep answers concise."},
                 {"role": "user", "content": prompt}
@@ -95,13 +109,14 @@ def analyze_stock():
         # 4. Send everything back to the Flutter app
         return jsonify({
             "symbol": symbol,
+            "period": period,			
             "data": data,
             "indicators": indicators,
             "analysis": ai_analysis,
         })
 
     except Exception as e:
-        return jsonify({"error": f"An internal error occurred: {str(e)}"}), 500
+        return jsonify({"error": f"An internal error occurred: for get {symbol} {period} {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
