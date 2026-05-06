@@ -23,16 +23,18 @@ class StockDataPoint {
 
 class AnalysisResult {
   final String symbol;
+  final String  period;
   final List<StockDataPoint> data;
   final Map<String, dynamic> indicators;
   final String analysis;
 
-  AnalysisResult({required this.symbol, required this.data, required this.indicators, required this.analysis});
+  AnalysisResult({required this.symbol, required this.period,required this.data, required this.indicators, required this.analysis});
 
   factory AnalysisResult.fromJson(Map<String, dynamic> json) {
     var dataList = (json['data'] as List).map((i) => StockDataPoint.fromJson(i)).toList();
     return AnalysisResult(
       symbol: json['symbol'],
+	  period: json['period'],
       data: dataList,
       indicators: json['indicators'],
       analysis: json['analysis'],
